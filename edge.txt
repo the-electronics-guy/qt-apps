@@ -1,0 +1,2 @@
+sudo apt-get install libatlas-base-dev libportaudio0 libportaudio2 libportaudiocpp0 portaudio19-dev
+pip3 install edge_impulse_linux -i https://pypi.python.org/simple
