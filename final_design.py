@@ -1,22 +1,21 @@
 import sys
 from PySide6.QtWidgets import (QApplication, QMainWindow, QDockWidget, QWidget, QVBoxLayout,
                                QPushButton, QStackedWidget, QHBoxLayout, QListWidget, QLineEdit,
-                               QToolButton, QToolBar, QLabel,QTabWidget,QTextEdit)
+                               QToolButton, QToolBar, QLabel,QTabWidget,QTextEdit, QDialog)
 from PySide6.QtCore import Qt, QSize, QThread, Signal, QMimeData, QPoint, QByteArray
-from PySide6.QtGui import QIcon, QPixmap, QImage, QDrag
+from PySide6.QtGui import QIcon, QPixmap, QImage, QDrag, QFont
 from PySide6.QtWebEngineWidgets import QWebEngineView
 import folium
 from folium.plugins import Draw
-
+import requests
 
 
 class ImageListWidget(QListWidget):
     pass
 
 
-
 class MapDisplay(QMainWindow):
-    def __init__(self, icon_filenames):
+    def __init__(self):
         super().__init__()
 
         self.setWindowTitle("Map Application")
@@ -56,6 +55,19 @@ class MapDisplay(QMainWindow):
         self.peers_button.setToolTip("Peers")
         self.toolbar.addWidget(self.peers_button)
 
+        # Weather button
+        self.weather_button = self.create_tool_button("qt icons/weather_icon.svg", "Weather")
+        self.weather_button.setToolButtonStyle(Qt.ToolButtonIconOnly)
+        self.weather_button.setToolTip("Weather")
+        self.weather_button.clicked.connect(self.toggle_weather_widget)
+        self.toolbar.addWidget(self.weather_button)
+
+        # maps button
+        self.maps_button = self.create_tool_button("qt icons/map_icon.ico", "Maps")
+        self.maps_button.setToolButtonStyle(Qt.ToolButtonIconOnly)
+        self.maps_button.setToolTip("Maps")
+        self.toolbar.addWidget(self.maps_button)
+
         # Toggle dock button
         self.toggle_dock_button = QToolButton()
         self.toggle_dock_button.setIcon(QIcon("qt icons/toggle_icon.svg"))
@@ -65,7 +77,7 @@ class MapDisplay(QMainWindow):
         self.toolbar.addWidget(self.toggle_dock_button)
 
         # Create the map
-        self.m = folium.Map([5.590039, -0.156270], zoom_start=14).add_child(
+        self.m = folium.Map([5.590039, -0.156270], zoom_start=10).add_child(
             folium.ClickForMarker(popup="Select Icon"))
 
         draw = Draw(export=True)
@@ -81,12 +93,22 @@ class MapDisplay(QMainWindow):
         self.web_view.setHtml(open(self.map_html, 'r').read())
         self.setCentralWidget(self.web_view)
 
+        # Add Weather Widget
+        self.weather_widget = WeatherApp()
+        self.weather_widget.move(200, 500)  # Move to desired position
+        self.weather_widget.hide()
+
         # Create a dock widget for stacking interfaces
         self.dock_widget = QDockWidget("Interfaces", self)
         self.addDockWidget(Qt.RightDockWidgetArea, self.dock_widget)
-        self.icon_filenames = icon_filenames
 
         self.dock_widget.hide()
+
+    def toggle_weather_widget(self):
+        if self.weather_widget.isHidden():
+            self.weather_widget.show()
+        else:
+            self.weather_widget.hide()
 
     def toggle_dock_widget(self):
         if self.dock_widget.isHidden():
@@ -113,6 +135,122 @@ class MapDisplay(QMainWindow):
     def show_symbol_manager(self):
         self.symbol_manager = SymbolManager()
         self.dock_widget.setWidget(self.symbol_manager)
+
+
+class WeatherApp(QWidget):
+    def __init__(self):
+        super().__init__()
+        self.setWindowTitle("Weather App")
+        # Set background color
+        self.setStyleSheet("background-color: #f0f0f0;")
+
+        self.layout = QVBoxLayout()
+        self.setLayout(self.layout)
+
+        self.cityName = "Accra"
+        self.api_key = 'd2ed8137acc17a02bcd284b4548d5b88'
+        self.BASE_URL = "https://api.openweathermap.org/data/2.5/weather"
+
+        # Create weather label
+        self.weather_label = QLabel()
+        self.weather_label.setFont(QFont("Arial", 14))
+        self.layout.addWidget(self.weather_label)
+
+        # Create weather icon
+        self.weather_icon_label = QLabel()
+        self.layout.addWidget(self.weather_icon_label)
+
+        # Create layouts for temperature, humidity, and wind speed
+        temperature_layout = QHBoxLayout()
+        self.layout.addLayout(temperature_layout)
+
+        humidity_layout = QHBoxLayout()
+        self.layout.addLayout(humidity_layout)
+
+        wind_speed_layout = QHBoxLayout()
+        self.layout.addLayout(wind_speed_layout)
+
+        # Set up temperature label and icon
+        temperature_icon = QLabel()
+        temperature_icon.setPixmap(QPixmap("qt icons/temperature_icon.svg").scaled(30, 30))
+        temperature_layout.addWidget(temperature_icon)
+
+        self.temperature_label = QLabel()
+        temperature_layout.addWidget(self.temperature_label)
+
+        # Set up humidity label and icon
+        humidity_icon = QLabel()
+        humidity_icon.setPixmap(QPixmap("qt icons/humidity_icon.svg").scaled(30, 30))
+        humidity_layout.addWidget(humidity_icon)
+
+        self.humidity_label = QLabel()
+        humidity_layout.addWidget(self.humidity_label)
+
+        # Set up wind speed label and icon
+        wind_speed_icon = QLabel()
+        wind_speed_icon.setPixmap(QPixmap("qt icons/wind_speed_icon.svg").scaled(30, 30))
+        wind_speed_layout.addWidget(wind_speed_icon)
+
+        self.wind_speed_label = QLabel()
+        wind_speed_layout.addWidget(self.wind_speed_label)
+
+        # Create refresh button
+        self.refresh_button = QPushButton("Refresh Weather")
+        self.refresh_button.clicked.connect(self.refresh_weather)
+        self.layout.addWidget(self.refresh_button)
+
+        # Set initial weather
+        self.refresh_weather()
+
+        # Make the widget draggable
+        self.setMouseTracking(True)
+        self.old_pos = None
+
+    def mousePressEvent(self, event):
+        if event.button() == Qt.LeftButton:
+            self.old_pos = event.globalPos()
+
+    def mouseMoveEvent(self, event):
+        if self.old_pos:
+            delta = event.globalPos() - self.old_pos
+            self.move(self.x() + delta.x(), self.y() + delta.y())
+            self.old_pos = event.globalPos()
+
+    def mouseReleaseEvent(self, event):
+        if event.button() == Qt.LeftButton:
+            self.old_pos = None
+
+    def refresh_weather(self):
+        self.refresh_button.setEnabled(False)  # Disable refresh button during update
+        try:
+            url = f"{self.BASE_URL}?q={self.cityName}&appid={self.api_key}&units=metric"
+            response = requests.get(url)
+            response.raise_for_status()  # Raise an exception for bad responses
+            data = response.json()
+
+            weather_description = data['weather'][0]['description']
+            temperature = data['main']['temp']
+            humidity = data['main']['humidity']
+            wind_speed = data['wind']['speed']
+            icon_name = data['weather'][0]['icon']
+            icon_url = f"http://openweathermap.org/img/wn/{icon_name}.png"
+            icon_data = requests.get(icon_url).content
+            pixmap = QPixmap()
+            pixmap.loadFromData(icon_data)
+
+            # Display weather information
+            weather_report = f"Weather: {weather_description}"
+            self.weather_label.setText(weather_report)
+            self.weather_icon_label.setPixmap(pixmap)
+
+            # Display temperature, humidity, and wind speed
+            self.temperature_label.setText(f"{temperature}°C")
+            self.humidity_label.setText(f"{humidity}%")
+            self.wind_speed_label.setText(f"{wind_speed} m/s")
+        except Exception as e:
+            print(f"Error: {e}")  # Handle errors gracefully
+        finally:
+            self.refresh_button.setEnabled(True)  # Enable refresh button after update
 
 
 class ChatInterface(QWidget):
@@ -145,7 +283,6 @@ class ChatInterface(QWidget):
         input_layout.addWidget(self.upload_button)
 
         self.main_layout.addLayout(input_layout)
-
 
 
 class Page2(QWidget):
@@ -244,6 +381,6 @@ class MainWindow(QMainWindow):
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
-    window = MapDisplay(["airborne.png", "icon2.png"])
+    window = MapDisplay()
     window.show()
     sys.exit(app.exec())
